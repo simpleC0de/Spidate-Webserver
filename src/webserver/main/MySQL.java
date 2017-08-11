@@ -170,7 +170,7 @@ public class MySQL {
 		return thread;
 	}
 
-	public String getVersion(String pluginId) {
+	public String getVersion(int pluginId) {
 		try {
 			String respond = "";
 

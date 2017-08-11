@@ -164,9 +164,20 @@ public class HTMLServer {
 					System.out.println("["+getTime()+"] Invalid Args");
 					return;
 				}
-
-				String pluginId = requestUri[1];
-				pluginId = pluginId.replaceAll("?", "");
+				
+				//to prevent SQL Injection, also id can only be an positive integer
+				int pluginId;
+				try {
+					pluginId = Integer.parseInt(requestUri[1].replaceAll("?", "")); //check if id is an true integer
+					if(pluginId < 0) { //ID can never be negative
+						throw new NumberFormatException();
+					}
+				} catch(NumberFormatException ex) {
+					sendResponse(new StatusResponse(0, "INVALID ARGUMENTS", null), exchange, 400); //400 Bad Request
+					
+					System.out.println("["+getTime()+"] Invalid Args");
+					return;
+				}
 
 				String version = sql.getVersion(pluginId);
 
