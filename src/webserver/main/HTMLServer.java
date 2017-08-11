@@ -1,13 +1,12 @@
 package webserver.main;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonElement;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
-
 
 import java.io.*;
 import java.net.HttpURLConnection;
@@ -21,206 +20,179 @@ import java.util.Calendar;
  */
 public class HTMLServer {
 
+	private HttpServer server;
 
-    private HttpServer server;
+	private final MySQL sql;
 
-    private static MySQL sql;
+	public HTMLServer(MySQL sql) throws Exception {
+		this.sql = sql;
+	}
 
-    public HTMLServer(MySQL sql) throws Exception {
-        this.sql = sql;
-    }
+	public void startServer() {
+		if (server != null) {
+			System.out.println("Server already running.");
+			return;
+		}
+		
+		try {
+			server = HttpServer.create(new InetSocketAddress(8080), 0);
+			server.createContext("/", new MyHandler());
+			server.start();
+		} catch (Exception ex) {
+			ex.printStackTrace();
+		}
 
-    public void startServer(){
+		System.out.println("Started Server.");
+	}
 
+	public void stopServer() {
+		if (server != null) {
+			server.stop(1);
+		}
 
-        if(server != null){
-            System.out.println("Server already running.");
+		server = null;
+		
+		System.out.println("Server stopped.");
+	}
 
-            return;
-        }
-        try{
-            server = HttpServer.create(new InetSocketAddress(8080), 0);
-            server.createContext("/", new MyHandler());
-            server.start();
-        }catch(Exception ex){
-            ex.printStackTrace();
-        }
+	public void restartServer() {
+		if (server != null) {
+			server.stop(1);
+		}
+		startServer();
+	}
 
+	@SuppressWarnings("unused")
+	public String requestVersion(String id) {
 
-        System.out.println("Started Server.");
+		String responseString = "";
+		try {
+			String url = "http://localhost:8080/?=" + id;
+			URL obj = new URL(url);
+			HttpURLConnection con = (HttpURLConnection) obj.openConnection();
 
-    }
+			con.setRequestProperty("User-Agent", "SPIDATE-USER");
+			con.setRequestMethod("POST");
+			con.setRequestProperty("Accept-Language", "en-US,en;q=0.5");
+			con.setDoOutput(true);
 
-    public void stopServer(){
+			DataOutputStream wr = new DataOutputStream(con.getOutputStream());
+			wr.flush();
+			wr.close();
 
-        if(server != null){
-            server.stop(1);
-        }
+			BufferedReader in;
+			try {
+				in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+			} catch (Exception ex) {
+				in = new BufferedReader((new InputStreamReader(con.getErrorStream())));
+			}
 
-        server = null;
+			String inputLine;
+			StringBuffer response = new StringBuffer();
 
-        System.out.println("Server stopped.");
+			while ((inputLine = in.readLine()) != null) {
+				response.append(inputLine);
+			}
 
+			in.close();
 
-    }
+			JsonParser jsonParser = new JsonParser();
+			JsonObject jo = (JsonObject) jsonParser.parse(response.toString());
+			String status = jo.get("status").getAsString(); // Used to get the status, example: 0 or 1
+			if ((Integer.parseInt(status) == 1)) {
+				String version = jo.get("version").getAsString(); // Used to get the  version, only when returning status 1 (Success)
+			}
 
-    public void restartServer(){
+			String message = jo.get("message").getAsString(); // Used to get the message, example: NO API CALL
 
+			responseString = response.toString();
 
-        if(server != null){
-            server.stop(1);
-        }
+			/*
+			 * Thanks for using our Service. This was and will be a spare time
+			 * open-source project. We're aiming to improve our skills at every
+			 * corner of programming. If you want a reliable way of getting your
+			 * plugin version, try https://spiget.org
+			 */
+			return responseString;
+		} catch (Exception ex) {
+			ex.printStackTrace();
+			return null;
+		}
+	}
 
-        startServer();
-    }
-
-
-    public String requestVersion(String id){
-
-        String responseString = "";
-        try{
-            String url = "http://localhost:8080/?=" + id;
-            URL obj = new URL(url);
-            HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-
-            con.setRequestProperty("User-Agent", "SPIDATE-USER");
-            con.setRequestMethod("POST");
-            con.setRequestProperty("Accept-Language", "en-US,en;q=0.5");
-            con.setDoOutput(true);
-
-            DataOutputStream wr = new DataOutputStream(con.getOutputStream());
-            wr.flush();
-            wr.close();
-
-            BufferedReader in;
-            try{
-                in = new BufferedReader(new InputStreamReader(con.getInputStream()));
-            }catch(Exception ex){
-                in = new BufferedReader((new InputStreamReader(con.getErrorStream())));
-            }
-
-            String inputLine;
-            StringBuffer response = new StringBuffer();
-
-            while ((inputLine = in.readLine()) != null) {
-                response.append(inputLine);
-            }
-
-            in.close();
-
-            JsonParser jsonParser = new JsonParser();
-            JsonObject jo = (JsonObject)jsonParser.parse(response.toString());
-            String status = jo.get("status").getAsString(); // Used to get the status, example: 0 or 1
-            if((Integer.parseInt(status) == 1)){
-                String version = jo.get("version").getAsString(); // Used to get the version, only when returning status 1 (Success)
-            }
-
-            String message = jo.get("message").getAsString(); // Used to get the message, example: NO API CALL
-
-            responseString = response.toString();
-
-            /*
-            Thanks for using our Service.
-            This was and will be a spare time open-source project.
-            We're aiming to improve our skills at every corner of programming.
-            If you want a reliable way of getting your plugin version, try https://spiget.org
-            */
-            return responseString;
-
-        }catch(Exception ex){
-            ex.printStackTrace();
-            return null;
-        }
-
-
-    }
-
-
-
-
-    static class MyHandler implements HttpHandler {
+    class MyHandler implements HttpHandler {
+    	
+    	private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
+    	private final SimpleDateFormat format = new SimpleDateFormat("HH:mm:ss");
+    	private final Calendar calendar = Calendar.getInstance();
+    	
+    	private String getTime() {
+    		return format.format(calendar.getTime());
+    	}
+    	
         @Override
-        public void handle(HttpExchange t) throws IOException {
-        try{
+        public void handle(HttpExchange exchange) throws IOException {
+        	try {
+				String dateTime = getTime();
 
+				if (exchange.getRequestHeaders().get("User-Agent") == null || !exchange.getRequestHeaders().get("User-Agent").toString().equalsIgnoreCase("[SPIDATE-USER]")) {
+					
+					sendResponse(new StatusResponse(0, "WRONG USERAGENT", null), exchange, 400); //Bad Request
+					
+					System.out.println("[" + dateTime + "] Wrong User-Agent Call");
+					return;
+				}
 
-            StatusResponse response = new StatusResponse();
-            Gson gson = new Gson();
+				if (!exchange.getRequestURI().toString().contains("api")) {
+					
+					sendResponse(new StatusResponse(0, "NO API CALL", null), exchange, 403); //Forbidden
+					
+					System.out.println("[" + dateTime + "] No API Call");
+					return;
+				}
 
-            String dateTime;
+				System.out.println("[" + dateTime + "] New Connection from - " + exchange.getRemoteAddress() + "\n");
 
-            String responseString;
+				sql.updateConnections();
 
-            Calendar cal = Calendar.getInstance();
-            SimpleDateFormat sdf = new SimpleDateFormat("HH:mm:ss");
-            dateTime = sdf.format(cal.getTime());
+				String[] requestUri = exchange.getRequestURI().toString().split("=");
+				
+				if(requestUri.length < 2) {
+					
+					sendResponse(new StatusResponse(0, "INVALID ARGUMENTS", null), exchange, 400); //400 Bad Request
+					
+					System.out.println("["+getTime()+"] Invalid Args");
+					return;
+				}
 
+				String pluginId = requestUri[1];
+				pluginId = pluginId.replaceAll("?", "");
 
-            if(t.getRequestHeaders().get("User-Agent") == null || !t.getRequestHeaders().get("User-Agent").toString().equalsIgnoreCase("[SPIDATE-USER]")){
-                response.setMessage("WRONG USERAGENT");
-                response.setStatus(0);
-                response.setVersion(null);
+				String version = sql.getVersion(pluginId);
 
-                responseString = gson.toJson(response);
-
-                t.sendResponseHeaders(404, responseString.length());
-                OutputStream os = t.getResponseBody();
-                os.write(responseString.getBytes());
-                os.close();
-                System.out.println("[" +dateTime+ "] Wrong User-Agent Call");
-                return;
-            }
-
-            if(!t.getRequestURI().toString().contains("api")){
-                response.setMessage("NO API CALL");
-                response.setStatus(0);
-                response.setVersion(null);
-
-                responseString = gson.toJson(response);
-
-                t.sendResponseHeaders(503, responseString.length());
-                OutputStream os = t.getResponseBody();
-                os.write(responseString.getBytes());
-                os.close();
-                System.out.println("[" +dateTime+ "] No API Call");
-                return;
-            }
-
-            System.out.println( "[" +dateTime+ "] New Connection from - " + t.getRemoteAddress() + "\n");
-
-            sql.updateConnections();
-
-            String[] requestUri = t.getRequestURI().toString().split("=");
-
-            String pluginId = requestUri[1];
-            pluginId = pluginId.replace("?", "");
-
-            String version = sql.getVersion(pluginId);
-
-
-            if(version.equalsIgnoreCase("") || version.isEmpty()){
-                response.setVersion(null);
-                response.setStatus(0);
-                response.setMessage("ID NOT FOUND");
-                responseString = gson.toJson(response);
-            }else{
-                response.setStatus(1);
-                response.setVersion(version);
-                response.setMessage("SUCCESS");
-                responseString = gson.toJson(response);
-            }
-
-
-            t.sendResponseHeaders(200, responseString.length());
-            OutputStream os = t.getResponseBody();
-            os.write(responseString.getBytes());
-            os.close();
-        }catch(Exception ex){
-             ex.printStackTrace();
+				if (version.equalsIgnoreCase("") || version.isEmpty()) {
+					
+					sendResponse(new StatusResponse(0, "ID NOT FOUND", null), exchange, 404); //404 Not Found
+					
+				} else {
+					sendResponse(new StatusResponse(1, "SUCCESS", version), exchange, 200); //200 Ok
+				}
+			} catch (Exception ex) {
+				ex.printStackTrace();
+			}
+		}
+        
+        private void sendResponse(StatusResponse response, HttpExchange exchange, int httpstatus) {
+			String responseString = gson.toJson(response);
+			try {
+				exchange.sendResponseHeaders(httpstatus, responseString.length());
+				OutputStream os = exchange.getResponseBody();
+				os.write(responseString.getBytes());
+				os.close();
+			} catch (IOException ex) {
+				ex.printStackTrace();
+			}
         }
-
-
-        }
-    }
+	}
 
 }
