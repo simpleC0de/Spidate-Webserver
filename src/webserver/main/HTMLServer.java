@@ -24,7 +24,7 @@ public class HTMLServer {
 
 	private final MySQL sql;
 
-	public HTMLServer(MySQL sql) throws Exception {
+	public HTMLServer(MySQL sql) {
 		this.sql = sql;
 	}
 
